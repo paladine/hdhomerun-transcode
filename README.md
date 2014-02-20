@@ -1,9 +1,13 @@
 hdhomerun-transcode
 ===================
 
-HD Home Run transcoding node.js server
+HD Home Run transcoding node.js server. Transcodes the audio from an HDHomeRun stream into a 
+mobile device friendly 2 channel AAC stream.
 
-That being said, the top part transode.js contains a definition of the IP address of your HD Home Run device. 
+Setup
+===================
+
+The top part of transode.js contains a definition of the IP address of your HD Home Run device. 
 Mine is 192.168.103.210, so you need to change that to the IP of your device. The other thing you need is a working copy
 of ffmpeg in your path that has been compiled with libfdk_aac support. I followed this guide -
 
