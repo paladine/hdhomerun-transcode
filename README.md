@@ -20,3 +20,10 @@ http://192.168.103.200:5004/auto/v5.1. Same URL scheme.
 If you're running in the console, you'll see some log output when clients connect and disconnect. If you plan on
 running in the background (starting process, then logging off), you should pipe the output to /dev/null
 (node stream.js > /dev/null &) since node will crash and burn if you disconnect the tty.
+
+mkstrm.js
+===================
+
+This is a utility script that autogenerates a set of XBMC STRM files from your programmed
+channels on your Home Run. Generates files in Native, Heavy and Mobile formats. Has support
+for configuring the STRM files to point to your transcoding server instead of the device IP.

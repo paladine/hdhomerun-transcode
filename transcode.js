@@ -9,6 +9,7 @@ to whatever yours is
 
 var HDHomeRunIP = "192.168.103.210";
 var HDHomeRunPort = 5004;
+var childKillTimeoutMs = 1000;
 
 // define startsWith for string
 if (typeof String.prototype.startsWith != 'function') {
@@ -19,17 +20,31 @@ if (typeof String.prototype.startsWith != 'function') {
 }
 // Called when the response object fires the 'close' handler, kills ffmpeg 
 function responseCloseHandler(command) {
-  console.log('HTTP connection disrupted, killing ffmpeg: ' + command.pid);
-  // TODO - should probably change to send a 'q' which signals ffmpeg to quit. 
-  // Then wait half a second, send a nice signal, wait another half second
-  // and send SIGKILL
-  
-  // killing ffmpeg is tricky, so we just spam a bunch of signals in the hopes
-  // that it works
-  command.kill();
-  command.kill('SIGTERM');
-  command.kill('SIGQUIT');
-  command.kill('SIGKILL');
+  if (command.exited != true) {
+    console.log('HTTP connection disrupted, killing ffmpeg: ' + command.pid);
+    // Send a 'q' which signals ffmpeg to quit. 
+    // Then wait half a second, send a nice signal, wait another half second
+    // and send SIGKILL
+    command.stdin.write('q');
+    // install timeout and wait
+    setTimeout(function() {
+      if (command.exited != true) {
+        console.log('ffmpeg didn\'t quit on q, sending signals');
+        // still connected, do safe sig kills
+        command.kill('SIGQUIT');
+        command.kill('SIGTERM');
+        command.kill('SIGINT');
+        // wait some more!
+        setTimeout(function() {
+          if (command.exited != true) {
+            console.log('ffmpe didn\'t quit on signals, sending SIGKILL');
+            // at this point, just give up and whack it
+            command.kill('SIGKILL');
+          }
+        }, childKillTimeoutMs);
+      }    
+    }, childKillTimeoutMs);
+  }
 }
 
 // Performs a proxy. Copies data from proxy_request into response
@@ -74,9 +89,12 @@ function doTranscode(request,response) {
     console.log('Spawning new process ' + request.url + ":" + request.method);
   
     var command = child_process.spawn('ffmpeg', ['-i','http://' + HDHomeRunIP + ':' + HDHomeRunPort + request.url,'-vcodec','copy','-ac','2','-acodec','libfdk_aac','-b:a','128k','-f','mpegts','-']);
+    command.exited = false;
     // handler for when ffmpeg dies unexpectedly
     command.on('exit',function(code,signal) {
-      console.log('ffmpeg aborted prematurely: ' + code);
+      console.log('ffmpeg has exited: ' + command.pid + ", code " + code);
+      // set flag saying we've quit
+      command.exited = true;
       response.end();
     });
     // handler for when client closes the URL connection - stop ffmpeg
