@@ -31,15 +31,21 @@ function responseCloseHandler(command) {
       if (command.exited != true) {
         console.log('ffmpeg didn\'t quit on q, sending signals');
         // still connected, do safe sig kills
-        command.kill('SIGQUIT');
-        command.kill('SIGTERM');
-        command.kill('SIGINT');
+        command.kill();
+        try { 
+          command.kill('SIGQUIT');
+        } catch (err) {}
+        try {
+          command.kill('SIGINT');
+        } catch (err) {} 
         // wait some more!
         setTimeout(function() {
           if (command.exited != true) {
             console.log('ffmpe didn\'t quit on signals, sending SIGKILL');
             // at this point, just give up and whack it
-            command.kill('SIGKILL');
+            try {
+              command.kill('SIGKILL');
+            } catch (err) {}
           }
         }, childKillTimeoutMs);
       }    
