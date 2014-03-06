@@ -19,7 +19,16 @@ http://192.168.103.200:5004/auto/v5.1. Same URL scheme.
 
 If you're running in the console, you'll see some log output when clients connect and disconnect. If you plan on
 running in the background (starting process, then logging off), you should pipe the output to /dev/null
-(node stream.js > /dev/null &) since node will crash and burn if you disconnect the tty.
+(node transcode.js > /dev/null &) since node will crash and burn if you disconnect the tty.
+
+HTTP Authentication
+===================
+I've added support for basic HTTP authentication. You specify it with the --user and --pass arguments.
+Example: node transcode.js --user validUser --password validPassword.
+
+Login attempts will be printed to the console for logging purposes. Passing the password argument
+on the command line isn't very secure and an attacker who has shell access could discover it via the
+ps command
 
 mkstrm.js
 ===================

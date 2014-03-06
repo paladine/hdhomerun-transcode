@@ -25,7 +25,8 @@ function responseCloseHandler(command) {
     // Send a 'q' which signals ffmpeg to quit. 
     // Then wait half a second, send a nice signal, wait another half second
     // and send SIGKILL
-    command.stdin.write('q');
+    command.stdin.write('q\n');
+    command.stdin.destroy();
     // install timeout and wait
     setTimeout(function() {
       if (command.exited != true) {
@@ -41,7 +42,7 @@ function responseCloseHandler(command) {
         // wait some more!
         setTimeout(function() {
           if (command.exited != true) {
-            console.log('ffmpe didn\'t quit on signals, sending SIGKILL');
+            console.log('ffmpeg didn\'t quit on signals, sending SIGKILL');
             // at this point, just give up and whack it
             try {
               command.kill('SIGKILL');
@@ -78,7 +79,7 @@ function doProxy(request,response,http,options) {
 }
 
 var child_process = require('child_process');
-
+var auth = require('./auth');
 // Performs the transcoding after the URL is validated
 function doTranscode(request,response) {
   //res.setHeader("Accept-Ranges", "bytes");
@@ -94,13 +95,30 @@ function doTranscode(request,response) {
   if (request.method == 'GET') {
     console.log('Spawning new process ' + request.url + ":" + request.method);
   
-    var command = child_process.spawn('ffmpeg', ['-i','http://' + HDHomeRunIP + ':' + HDHomeRunPort + request.url,'-vcodec','copy','-ac','2','-acodec','libfdk_aac','-b:a','128k','-f','mpegts','-']);
+    var command = child_process.spawn('ffmpeg', 
+                                      ['-i','http://' + HDHomeRunIP + ':' + HDHomeRunPort + request.url,'-vcodec','copy','-ac','2','-acodec','libfdk_aac','-b:a','128k','-f','mpegts','-'],
+                                      { stdio: ['pipe','pipe','ignore'] }); 
     command.exited = false;
     // handler for when ffmpeg dies unexpectedly
     command.on('exit',function(code,signal) {
       console.log('ffmpeg has exited: ' + command.pid + ", code " + code);
       // set flag saying we've quit
       command.exited = true;
+      response.end();
+    });
+    command.on('error',function(error) {
+      console.log('ffmpeg error handler - unable to kill: ' + command.pid);
+      // on well, might as well give up
+      command.exited = true;
+      try {
+        command.stdin.close(); 
+      } catch (err) {}
+      try {
+        command.stdout.close();
+      } catch (err) {}
+      try {
+        command.stderr.close();
+      } catch (err) {}
       response.end();
     });
     // handler for when client closes the URL connection - stop ffmpeg
@@ -115,6 +133,14 @@ function doTranscode(request,response) {
     // now stream
     console.log('piping ffmpeg output to client, pid ' + command.pid);
     command.stdout.pipe(response);
+    command.stdin.on('error',function(err) {
+      console.log("Weird error in stdin pipe ", err);
+      response.end();
+    });
+    command.stdout.on('error',function(err) {
+      console.log("Weird error in stdout pipe ",err);
+      response.end();
+    });
   } 
   else {
     // not GET, so close response
@@ -127,44 +153,50 @@ var http = require('http');
 
 // Configure our HTTP server to respond with Hello World to all requests.
 var server = http.createServer(function (request, response) {
-  // first send a HEAD request to our HD Home Run with the same url to see if the address is valid.
-  // This prevents an ffmpeg instance to spawn when clients request invalid things - like robots.txt/etc
-  var options = {method: 'HEAD', hostname: HDHomeRunIP, port: HDHomeRunPort, path: request.url};
-  var req = http.request(options, function(res) {
-    // if they do a get, and it returns good status
-    if (request.method == "GET" &&
-        res.statusCode == 200 &&
-        res.headers["content-type"] != null &&
-        res.headers["content-type"].startsWith("video")) {
-      // transcode is possible, start it now!
-      doTranscode(request,response);
-    } 
-    else {
-      // no video or error, cannot transcode, just forward the response from the HD Home run to the client
-      if (request.method == "HEAD") {
-        response.writeHead(res.statusCode,res.headers);
-        response.end();
-      }
+  if (auth.validate(request,response)) {
+    // first send a HEAD request to our HD Home Run with the same url to see if the address is valid.
+    // This prevents an ffmpeg instance to spawn when clients request invalid things - like robots.txt/etc
+    var options = {method: 'HEAD', hostname: HDHomeRunIP, port: HDHomeRunPort, path: request.url};
+    var req = http.request(options, function(res) {
+      // if they do a get, and it returns good status
+      if (request.method == "GET" &&
+          res.statusCode == 200 &&
+          res.headers["content-type"] != null &&
+          res.headers["content-type"].startsWith("video")) {
+        // transcode is possible, start it now!
+        doTranscode(request,response);
+      } 
       else {
-        // do a 301 redirect and have the device response directly
-        //response.writeHead(301,{Location: 'http://' + HDHomeRunIP + ':5004' + request.url});
-        //response.end();
+        // no video or error, cannot transcode, just forward the response from the HD Home run to the client
+        if (request.method == "HEAD") {
+          response.writeHead(res.statusCode,res.headers);
+          response.end();
+        }
+        else {
+          // do a 301 redirect and have the device response directly
+          //response.writeHead(301,{Location: 'http://' + HDHomeRunIP + ':5004' + request.url});
+          //response.end();
         
-        // just proxy it, that way browser doesn't redirect to HDHomeRun IP but keeps the node.js server IP
-        options = {method: request.method, hostname: HDHomeRunIP, port: HDHomeRunPort, path: request.url};
-        doProxy(request,response,http,options);
+          // just proxy it, that way browser doesn't redirect to HDHomeRun IP but keeps the node.js server IP
+          options = {method: request.method, hostname: HDHomeRunIP, port: HDHomeRunPort, path: request.url};
+          doProxy(request,response,http,options);
+        }
       }
-    }
-  });
-  req.on('error', function(e) {
-    console.log('problem with request: ' + e.message);
-    response.writeHeader(500);
-    response.end();
-  });
-  // finish the client request, rest of processing done in the async callbacks
-  req.end();
+    });
+    req.on('error', function(e) {
+      console.log('problem with request: ' + e.message);
+      response.writeHeader(500);
+      response.end();
+    });
+    // finish the client request, rest of processing done in the async callbacks
+    req.end();
+  }
 });
 
+// turn on no delay for tcp
+server.on('connection', function (socket) {
+  socket.setNoDelay(true);
+});
 // Listen on port HDHomeRunPort, IP defaults to 127.0.0.1
 server.listen(HDHomeRunPort);
 
