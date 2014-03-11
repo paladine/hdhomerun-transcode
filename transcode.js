@@ -10,6 +10,7 @@ to whatever yours is
 var HDHomeRunIP = "192.168.103.210";
 var HDHomeRunPort = 5004;
 var childKillTimeoutMs = 1000;
+var parseArgs = require('minimist')(process.argv.slice(2));
 
 // define startsWith for string
 if (typeof String.prototype.startsWith != 'function') {
@@ -153,6 +154,8 @@ var http = require('http');
 
 // Configure our HTTP server to respond with Hello World to all requests.
 var server = http.createServer(function (request, response) {
+  console.log("New connection from " + request.socket.remoteAddress + ":" + request.url);
+  
   if (auth.validate(request,response)) {
     // first send a HEAD request to our HD Home Run with the same url to see if the address is valid.
     // This prevents an ffmpeg instance to spawn when clients request invalid things - like robots.txt/etc
@@ -197,9 +200,10 @@ var server = http.createServer(function (request, response) {
 server.on('connection', function (socket) {
   socket.setNoDelay(true);
 });
-// Listen on port HDHomeRunPort, IP defaults to 127.0.0.1
-server.listen(HDHomeRunPort);
+// Listen on port HDHomeRunPort, or use the --port argument. IP defaults to 127.0.0.1
+var listenPort = parseArgs.hasOwnProperty("port") ? parseArgs.port : HDHomeRunPort;
+server.listen(listenPort);
 
 // Put a friendly message on the terminal
-console.log("Server running at http://127.0.0.1:" + HDHomeRunPort);
+console.log("Server running at http://127.0.0.1:" + listenPort);
 
